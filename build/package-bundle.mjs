@@ -83,17 +83,26 @@ writeFileSync(path.join(distDir, 'server.json'), JSON.stringify({
       + '可搜索调试。另监听 5321 代理端口；配置热重载在 Android 上不可用（chokidar 已裁）。',
 }, null, 2));
 
-// ④ zip（Windows 无 zip CLI 时走 PowerShell Compress-Archive）
+// ④ zip：python zipfile 统一打包（禁用 PowerShell Compress-Archive——
+// PS5.1 会写出「Local File Header 条目名用 \、Central Directory 用 /」的
+// 畸形 zip：python 校验读 CD 全部 `/` 而客户端 Dart archive 包读 LFH 拿到
+// `\`，解压即 PathAccessException（2026-11-10 1.0.1 首包实锤）。zipfile
+// 两处一致且恒 `/`）
 const zipPath = path.join(distDir, `danmu-${version}.zip`);
-console.log('[zip] 打包…');
-try {
-  execFileSync('zip', ['-q', '-r', path.basename(zipPath), 'danmu-api', 'server.json'],
-      {cwd: distDir, stdio: 'inherit'});
-} catch {
-  execFileSync('powershell.exe', ['-Command',
-    `Compress-Archive -Path danmu-api,server.json -DestinationPath `
-    + `${path.basename(zipPath)} -Force`], {cwd: distDir, stdio: 'inherit'});
-}
+console.log('[zip] 打包（python zipfile，分隔符恒 /）…');
+execFileSync('python', ['-c', `import zipfile, sys, os
+root, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+    for base in ('danmu-api', 'server.json'):
+        p = os.path.join(root, base)
+        if os.path.isfile(p):
+            z.write(p, base)
+            continue
+        for dp, _, fns in os.walk(p):
+            for fn in fns:
+                fp = os.path.join(dp, fn)
+                z.write(fp, os.path.relpath(fp, root).replace(os.sep, '/'))
+`, distDir, zipPath], {cwd: root, stdio: 'inherit'});
 
 // ⑤ 对账信息（market.json / README 登记用）
 const data = readFileSync(zipPath);
