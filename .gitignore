@@ -4,3 +4,9 @@ node_modules
 .env
 .cache
 dist
+node_modules
+.env
+build/stage
+build/dist
+build/server.bundle.mjs
+build/boot.log
